@@ -1,9 +1,9 @@
 import { $ } from "bun"
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises"
+import { chmod, copyFile, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-const CLI_VERSION = "0.0.0-next-16350"
+const CLI_VERSION = "1.18.18"
 
 export type Channel = "dev" | "beta" | "prod"
 
@@ -75,10 +75,10 @@ export async function downloadCliToResources() {
   const dest = windowsify("resources/opencode-cli")
   try {
     await $`bun install --no-save --cwd ${directory} ${`${cli.package}@${CLI_VERSION}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}`
-    await copyFile(
-      join(directory, "node_modules", cli.package, "bin", cli.os === "win32" ? "opencode2.exe" : "opencode2"),
-      dest,
-    )
+    const binDir = join(directory, "node_modules", cli.package, "bin")
+    const expected = join(binDir, cli.os === "win32" ? "opencode2.exe" : "opencode2")
+    const fallback = join(binDir, (await readdir(binDir)).find((item) => item.endsWith(cli.os === "win32" ? ".exe" : ""))!)
+    await copyFile(expected, dest).catch(() => copyFile(fallback, dest))
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

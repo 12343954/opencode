@@ -71,6 +71,15 @@ export type Config = Omit<SDKConfig, "plugin"> & {
   plugin?: Array<string | [string, PluginOptions]>
 }
 
+export type DesktopAction = {
+  id: string
+  location: "assistant-message" | "composer"
+  label: string
+  icon?: "play" | "stop" | "volume" | "volume-off"
+  active?: boolean
+  command?: string
+}
+
 export type Plugin = (input: PluginInput, options?: PluginOptions) => Promise<Hooks>
 
 export type PluginModule = {
@@ -262,6 +271,14 @@ export interface Hooks {
   "command.execute.before"?: (
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },
+  ) => Promise<void>
+  "desktop.ui.actions"?: (
+    input: { sessionID?: string },
+    output: { actions: DesktopAction[] },
+  ) => Promise<void>
+  "desktop.ui.action"?: (
+    input: { id: string; sessionID?: string; messageID?: string; text?: string },
+    output: { handled: boolean },
   ) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },

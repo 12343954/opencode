@@ -72,6 +72,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
+import { getDesktopTtsState, invokeDesktopAction, type DesktopAction, type DesktopTtsState } from "@/utils/desktop-plugin-actions"
 import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
@@ -255,6 +256,8 @@ export function MessageTimeline(props: {
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
+  desktopActions?: DesktopAction[]
+  onDesktopAction?: (input: { action: DesktopAction; messageID?: string; text?: string }) => void
 }) {
   let touchGesture: number | undefined
 
@@ -267,6 +270,34 @@ export function MessageTimeline(props: {
   const sessionArchive = useSessionArchive()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
+  const [desktopTtsState, setDesktopTtsState] = createSignal<DesktopTtsState>({ state: "idle" })
+  const refreshDesktopTtsState = () => {
+    void getDesktopTtsState({ server: serverSDK().server.http, directory: sdk().directory })
+      .then(setDesktopTtsState)
+      .catch(() => setDesktopTtsState({ state: "idle" }))
+  }
+  const ttsPoll = window.setInterval(refreshDesktopTtsState, 1000)
+  onCleanup(() => window.clearInterval(ttsPoll))
+  refreshDesktopTtsState()
+  const runDesktopAction = (input: { action: DesktopAction; messageID?: string; text?: string }) => {
+    void invokeDesktopAction({
+      server: serverSDK().server.http,
+      directory: sdk().directory,
+      action: {
+        id: input.action.id,
+        sessionID: params.id,
+        messageID: input.messageID,
+        text: input.text,
+      },
+    }).catch((error) =>
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : language.t("common.requestFailed"),
+      }),
+    )
+    setTimeout(refreshDesktopTtsState, 150)
+  }
   const ownerSessionKey = sessionKey()
   const cached = timelineCache.get(ownerSessionKey)
   const initialMeasurements = cached?.measurements
@@ -1032,10 +1063,47 @@ export function MessageTimeline(props: {
                 deferToolContent
                 virtualizeDiff={false}
                 onContentRendered={onSizeChange}
+                textActions={(input) =>
+                  row().group.type === "part" ? (
+                    <DesktopAssistantActionButton messageID={row().group.ref.messageID} text={input.text} />
+                  ) : undefined
+                }
               />
             )}
           </Show>
         )}
+      </Show>
+    )
+  }
+
+  const assistantActions = () => props.desktopActions?.filter((action) => action.location === "assistant-message") ?? []
+  const ttsSpeakAction = () => assistantActions().find((action) => action.id === "tts.speak-message")
+  const ttsPauseAction = () => assistantActions().find((action) => action.id === "tts.pause-toggle")
+
+  function DesktopAssistantActionButton(props: { messageID: string; text: string }) {
+    const isCurrent = () => desktopTtsState().messageID === props.messageID && desktopTtsState().state !== "idle"
+    const isPlaying = () => isCurrent() && desktopTtsState().state === "playing"
+    const isPaused = () => isCurrent() && desktopTtsState().state === "paused"
+    const label = () => (isCurrent() ? (isPaused() ? "继续朗读" : "暂停朗读") : "朗读")
+    const icon = (): "play" | "pause" => (isPlaying() ? "pause" : "play")
+    const handleClick = () => {
+      const action = isCurrent() ? ttsPauseAction() : ttsSpeakAction()
+      if (!action) return
+      runDesktopAction({ action, messageID: props.messageID, text: props.text })
+    }
+    return (
+      <Show when={ttsSpeakAction()}>
+        <IconButton
+          icon={icon()}
+          size="normal"
+          variant="ghost"
+          data-slot="text-part-tts-button"
+          data-tts-state={isPlaying() ? "playing" : isPaused() ? "paused" : "idle"}
+          title={label()}
+          aria-label={label()}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={handleClick}
+        />
       </Show>
     )
   }

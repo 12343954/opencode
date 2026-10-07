@@ -7,6 +7,7 @@ import {
   ErrorBoundary,
   onCleanup,
   Suspense,
+  For,
   Show,
   Match,
   Switch,
@@ -29,6 +30,8 @@ import { createStore } from "solid-js/store"
 import type { SessionReviewLineComment } from "@opencode-ai/session-ui/session-review"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Select } from "@opencode-ai/ui/select"
+import { Switch as UISwitch } from "@opencode-ai/ui/switch"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner } from "@opencode-ai/ui/scroll-view"
 import { Tabs } from "@opencode-ai/ui/tabs"
@@ -100,6 +103,11 @@ import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError, isLocalSessionNotFoundError, isSessionNotFoundError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
+import {
+  invokeDesktopAction,
+  listDesktopActions,
+  type DesktopAction,
+} from "@/utils/desktop-plugin-actions"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
@@ -407,6 +415,64 @@ export default function Page() {
 
   const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
   const sessionPanelKey = createMemo(() => (params.id ? `${serverSDK().scope}\0${params.id}` : undefined))
+  const desktopActionsQuery = createQuery(() => ({
+    queryKey: [serverSDK().scope, sdk().directory, "desktop-actions"] as const,
+    queryFn: () =>
+      listDesktopActions({ server: serverSDK().server.http, directory: sdk().directory }).catch(() => []),
+  }))
+  const desktopActions = createMemo(() => desktopActionsQuery.data ?? [])
+  const composerDesktopActions = createMemo(() =>
+    desktopActions().filter((action) => action.location === "composer"),
+  )
+  const runDesktopAction = (input: { action: DesktopAction; messageID?: string; text?: string }) => {
+    const sessionID = params.id
+    void invokeDesktopAction({
+      server: serverSDK().server.http,
+      directory: sdk().directory,
+      action: {
+        id: input.action.id,
+        sessionID,
+        messageID: input.messageID,
+        text: input.text,
+      },
+    })
+      .then(() =>
+        queryClient.invalidateQueries({
+          queryKey: [serverSDK().scope, sdk().directory, "desktop-actions"],
+        }),
+      )
+      .catch((err) =>
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: formatServerError(err, language.t, language.t("common.requestFailed")),
+        }),
+      )
+  }
+  const DesktopComposerActions = () => (
+    <Show when={composerDesktopActions().length > 0}>
+      <div class="flex items-center gap-1 pl-1">
+        <For each={composerDesktopActions()}>
+          {(action) => (
+            <Tooltip
+              value={language.t(action.active ? "session.tts.auto.disable" : "session.tts.auto.enable")}
+              placement="top"
+              gutter={4}
+            >
+              <UISwitch
+                checked={!!action.active}
+                class="h-7 cursor-pointer rounded-md border border-border-weak-base bg-surface-base px-2 text-text-muted transition-colors hover:bg-surface-hover data-[checked]:text-text-base [&_[data-slot=switch-label]]:cursor-pointer [&_[data-slot=switch-label]]:text-[11px] [&_[data-slot=switch-label]]:font-semibold [&_[data-slot=switch-control]]:h-[14px] [&_[data-slot=switch-control]]:w-[26px] data-[checked]:[&_[data-slot=switch-control]]:border-text-strong data-[checked]:[&_[data-slot=switch-control]]:bg-text-strong data-[checked]:[&_[data-slot=switch-thumb]]:bg-surface-base"
+                onChange={() => runDesktopAction({ action })}
+                aria-label={language.t(action.active ? "session.tts.auto.disable" : "session.tts.auto.enable")}
+              >
+                {action.label}
+              </UISwitch>
+            </Tooltip>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
 
   createEffect(
     on(
@@ -2107,6 +2173,8 @@ export default function Page() {
                     if (root) scheduleScrollState(root)
                   }}
                   userMessages={visibleUserMessages()}
+                  desktopActions={desktopActions()}
+                  onDesktopAction={runDesktopAction}
                   setHistoryAnchor={(handlers) => {
                     captureHistoryAnchor = handlers.capture
                     restoreHistoryAnchor = handlers.restore
@@ -2183,27 +2251,30 @@ export default function Page() {
                 <Show
                   when={newSessionDesign()}
                   fallback={
-                    <PromptInput
-                      controls={inputController()}
-                      ref={(el) => {
-                        inputRef = el
-                      }}
-                      newSessionWorktree={newSessionWorktree()}
-                      onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-                      onSubmit={() => {
-                        comments.clear()
-                        resumeScroll()
-                      }}
-                      edit={editingFollowup()}
-                      onEditLoaded={clearFollowupEdit}
-                      shouldQueue={queueEnabled}
-                      onQueue={queueFollowup}
-                      onAbort={() => {
-                        const id = params.id
-                        if (!id) return
-                        setFollowup("paused", id, true)
-                      }}
-                    />
+                    <>
+                      <PromptInput
+                        controls={inputController()}
+                        ref={(el) => {
+                          inputRef = el
+                        }}
+                        newSessionWorktree={newSessionWorktree()}
+                        onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
+                        onSubmit={() => {
+                          comments.clear()
+                          resumeScroll()
+                        }}
+                        edit={editingFollowup()}
+                        onEditLoaded={clearFollowupEdit}
+                        shouldQueue={queueEnabled}
+                        onQueue={queueFollowup}
+                        onAbort={() => {
+                          const id = params.id
+                          if (!id) return
+                          setFollowup("paused", id, true)
+                        }}
+                        bottomControls={DesktopComposerActions}
+                      />
+                    </>
                   }
                 >
                   {(_) => {
@@ -2234,7 +2305,15 @@ export default function Page() {
                         setFollowup("paused", id, true)
                       },
                     })
-                    return <PromptInputV2Composer controller={controller} borderUnderlay />
+                    return (
+                      <>
+                        <PromptInputV2Composer
+                          controller={controller}
+                          borderUnderlay
+                          bottomControls={<DesktopComposerActions />}
+                        />
+                      </>
+                    )
                   }}
                 </Show>
               }

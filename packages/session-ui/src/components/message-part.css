@@ -244,6 +244,11 @@
       display: inline-flex;
       width: fit-content;
     }
+
+    [data-slot="text-part-tts-button"][data-tts-state="playing"] {
+      color: #b8d98a;
+      animation: text-part-tts-breathe 1.4s ease-in-out infinite;
+    }
   }
 
   [data-slot="text-part-meta"] {
@@ -260,6 +265,19 @@
   &:focus-within [data-slot="text-part-copy-wrapper"] {
     opacity: 1;
     pointer-events: auto;
+  }
+}
+
+@keyframes text-part-tts-breathe {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 rgba(184, 217, 138, 0));
+    opacity: 0.78;
+  }
+
+  50% {
+    filter: drop-shadow(0 0 7px rgba(184, 217, 138, 0.85));
+    opacity: 1;
   }
 }
 

@@ -1,0 +1,70 @@
+import type { ServerConnection } from "@/context/server"
+import { authTokenFromCredentials } from "@/utils/server"
+
+export type PluginSettingsInfo = {
+  id: string
+  spec: string
+  source?: string
+  configurable: boolean
+}
+
+export type TtsPluginSettings = {
+  enabled?: boolean
+  mode?: "full" | "summary"
+  debug?: boolean
+  backend?: "edge_tts" | "say"
+  voice?: string
+  summaryLength?: string
+  edge_tts?: {
+    player?: string
+    voice?: string
+    rate?: string
+    volume?: string
+  }
+}
+
+function headers(server: ServerConnection.HttpBase) {
+  if (!server.password) return undefined
+  return {
+    Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
+  }
+}
+
+function url(server: ServerConnection.HttpBase, path: string, directory?: string) {
+  const result = new URL(path, server.url)
+  if (directory) result.searchParams.set("directory", directory)
+  return result
+}
+
+export async function listPluginSettings(input: { server: ServerConnection.HttpBase; directory?: string }) {
+  const response = await fetch(url(input.server, "/plugin-settings", input.directory), {
+    headers: headers(input.server),
+  })
+  if (!response.ok) throw new Error(`Plugin settings failed: ${response.status}`)
+  return (await response.json()) as PluginSettingsInfo[]
+}
+
+export async function getTtsPluginSettings(input: { server: ServerConnection.HttpBase; directory?: string }) {
+  const response = await fetch(url(input.server, "/plugin-settings/tts", input.directory), {
+    headers: headers(input.server),
+  })
+  if (!response.ok) throw new Error(`TTS settings failed: ${response.status}`)
+  return (await response.json()) as TtsPluginSettings
+}
+
+export async function updateTtsPluginSettings(input: {
+  server: ServerConnection.HttpBase
+  directory?: string
+  settings: TtsPluginSettings
+}) {
+  const response = await fetch(url(input.server, "/plugin-settings/tts", input.directory), {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      ...headers(input.server),
+    },
+    body: JSON.stringify(input.settings),
+  })
+  if (!response.ok) throw new Error(`TTS settings update failed: ${response.status}`)
+  return (await response.json()) as TtsPluginSettings
+}

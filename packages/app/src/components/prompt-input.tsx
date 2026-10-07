@@ -1783,6 +1783,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Show>
                   </Show>
                 </Show>
+                {props.bottomControls?.()}
               </div>
             </div>
           </div>

@@ -42,6 +42,7 @@ export type PromptInputV2Props = {
   class?: string
   modelControl?: JSX.Element
   variantControlVisible?: boolean
+  trailingControls?: JSX.Element
   attachKeybind?: string[]
   attachShortcut?: string
 }
@@ -253,6 +254,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
                 </Show>
               )}
             </Show>
+            {props.trailingControls}
           </div>
           <PromptInputV2SubmitButton
             mode={state.mode}

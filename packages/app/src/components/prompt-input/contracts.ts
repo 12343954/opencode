@@ -54,4 +54,5 @@ export interface PromptInputProps {
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
+  bottomControls?: () => import("solid-js").JSX.Element
 }
