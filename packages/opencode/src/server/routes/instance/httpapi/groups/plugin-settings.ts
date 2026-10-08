@@ -11,8 +11,15 @@ export const PluginSettingsInfo = Schema.Struct({
   id: Schema.String,
   spec: Schema.String,
   source: Schema.optional(Schema.String),
+  scope: Schema.optional(Schema.Literals(["global", "local"])),
+  installedAt: Schema.optional(Schema.Number),
   configurable: Schema.Boolean,
+  uninstallable: Schema.Boolean,
 }).annotate({ identifier: "PluginSettingsInfo" })
+
+export const PluginSettingsUninstallInput = Schema.Struct({
+  id: Schema.String,
+}).annotate({ identifier: "PluginSettingsUninstallInput" })
 
 export const TtsPluginSettings = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
@@ -31,46 +38,57 @@ export const TtsPluginSettings = Schema.Struct({
   ),
 }).annotate({ identifier: "TtsPluginSettings" })
 
-export const PluginSettingsApi = HttpApi.make("pluginSettings")
-  .add(
-    HttpApiGroup.make("pluginSettings")
-      .add(
-        HttpApiEndpoint.get("list", root, {
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(PluginSettingsInfo), "Configured plugins"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "pluginSettings.list",
-            summary: "List plugins",
-            description: "List configured OpenCode plugins.",
-          }),
-        ),
-        HttpApiEndpoint.get("tts", `${root}/tts`, {
-          query: WorkspaceRoutingQuery,
-          success: described(TtsPluginSettings, "TTS plugin settings"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "pluginSettings.tts",
-            summary: "Get TTS plugin settings",
-            description: "Read opencode-tts-speak settings.",
-          }),
-        ),
-        HttpApiEndpoint.patch("ttsUpdate", `${root}/tts`, {
-          query: WorkspaceRoutingQuery,
-          payload: TtsPluginSettings,
-          success: described(TtsPluginSettings, "Updated TTS plugin settings"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "pluginSettings.ttsUpdate",
-            summary: "Update TTS plugin settings",
-            description: "Update opencode-tts-speak settings.",
-          }),
-        ),
-      )
-      .middleware(InstanceContextMiddleware)
-      .middleware(WorkspaceRoutingMiddleware)
-      .middleware(Authorization),
-  )
+export const PluginSettingsApi = HttpApi.make("pluginSettings").add(
+  HttpApiGroup.make("pluginSettings")
+    .add(
+      HttpApiEndpoint.get("list", root, {
+        query: WorkspaceRoutingQuery,
+        success: described(Schema.Array(PluginSettingsInfo), "Configured plugins"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.list",
+          summary: "List plugins",
+          description: "List configured OpenCode plugins.",
+        }),
+      ),
+      HttpApiEndpoint.get("tts", `${root}/tts`, {
+        query: WorkspaceRoutingQuery,
+        success: described(TtsPluginSettings, "TTS plugin settings"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.tts",
+          summary: "Get TTS plugin settings",
+          description: "Read opencode-tts-speak settings.",
+        }),
+      ),
+      HttpApiEndpoint.patch("ttsUpdate", `${root}/tts`, {
+        query: WorkspaceRoutingQuery,
+        payload: TtsPluginSettings,
+        success: described(TtsPluginSettings, "Updated TTS plugin settings"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.ttsUpdate",
+          summary: "Update TTS plugin settings",
+          description: "Update opencode-tts-speak settings.",
+        }),
+      ),
+      HttpApiEndpoint.post("uninstall", `${root}/uninstall`, {
+        query: WorkspaceRoutingQuery,
+        payload: PluginSettingsUninstallInput,
+        success: described(Schema.Boolean, "Whether the plugin was uninstalled"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.uninstall",
+          summary: "Uninstall plugin",
+          description: "Remove a configured plugin from its writable config file.",
+        }),
+      ),
+    )
+    .middleware(InstanceContextMiddleware)
+    .middleware(WorkspaceRoutingMiddleware)
+    .middleware(Authorization),
+)

@@ -5,7 +5,10 @@ export type PluginSettingsInfo = {
   id: string
   spec: string
   source?: string
+  scope?: "global" | "local"
+  installedAt?: number
   configurable: boolean
+  uninstallable: boolean
 }
 
 export type TtsPluginSettings = {
@@ -67,4 +70,17 @@ export async function updateTtsPluginSettings(input: {
   })
   if (!response.ok) throw new Error(`TTS settings update failed: ${response.status}`)
   return (await response.json()) as TtsPluginSettings
+}
+
+export async function uninstallPlugin(input: { server: ServerConnection.HttpBase; directory?: string; id: string }) {
+  const response = await fetch(url(input.server, "/plugin-settings/uninstall", input.directory), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...headers(input.server),
+    },
+    body: JSON.stringify({ id: input.id }),
+  })
+  if (!response.ok) throw new Error(`Plugin uninstall failed: ${response.status}`)
+  return (await response.json()) as boolean
 }

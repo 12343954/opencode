@@ -239,6 +239,48 @@
   border-bottom: none;
 }
 
+.settings-v2-plugin-trigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settings-v2-plugin-trigger:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
+.settings-v2-plugin-accordion[data-expanded] .settings-v2-plugin-row {
+  border-bottom-color: transparent;
+}
+
+.settings-v2-plugin-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-v2-plugin-chevron {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--v2-icon-icon-muted);
+  font-size: 12px;
+  transition: transform 120ms ease;
+}
+
+.settings-v2-plugin-accordion[data-expanded] .settings-v2-plugin-chevron {
+  transform: rotate(180deg);
+}
+
 .settings-v2-plugin-copy {
   display: flex;
   min-width: 0;
@@ -275,9 +317,77 @@
   font-size: 13px;
 }
 
+.settings-v2-plugin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 20px 20px;
+  border-bottom: 0.5px solid var(--v2-border-border-base);
+}
+
+.settings-v2-plugin-accordion:last-child .settings-v2-plugin-panel {
+  border-bottom: none;
+}
+
+.settings-v2-plugin-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-02);
+}
+
+.settings-v2-plugin-meta > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-v2-plugin-meta span {
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-v2-plugin-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 440;
+  color: var(--v2-text-text-base);
+}
+
+.settings-v2-plugin-actions {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.settings-v2-plugin-settings {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--v2-border-border-base);
+}
+
+.settings-v2-plugin-settings [data-component="settings-v2-row"] {
+  padding-inline: 0;
+}
+
+.settings-v2-plugin-note {
+  font-size: 12px;
+  color: var(--v2-text-text-muted);
+}
+
 @media (min-width: 640px) {
   .settings-v2-provider-row {
     flex-wrap: nowrap;
+  }
+
+  .settings-v2-plugin-meta {
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
   }
 }
 
