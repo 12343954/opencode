@@ -48,6 +48,7 @@
 This fork focuses on desktop usability improvements:
 
 - **Desktop TTS controls** - assistant messages can be read aloud with playback controls, system voice selection, speech rate and volume sliders, debug logs, and configurable player path selection.
+- **opencode-tts-speak integration** - the bundled plugin settings UI can configure the TTS backend, player path, voice, rate, volume, and debug log access without editing config files by hand.
 - **Improved plugin settings** - plugins are split into user and system tabs, searchable, sortable, and shown as separate expandable rows with inline settings.
 - **User plugin management** - user-installed plugins can be uninstalled from settings; built-in/system plugins stay read-only.
 - **Windows installer improvements** - the installer supports choosing a custom installation directory instead of forcing the default system drive path.
