@@ -26,6 +26,17 @@ export type TtsPluginSettings = {
   }
 }
 
+export type TtsVoiceInfo = {
+  id: string
+  name: string
+  language?: string
+}
+
+export type TtsPluginInfo = {
+  voices: TtsVoiceInfo[]
+  logPath: string
+}
+
 function headers(server: ServerConnection.HttpBase) {
   if (!server.password) return undefined
   return {
@@ -53,6 +64,14 @@ export async function getTtsPluginSettings(input: { server: ServerConnection.Htt
   })
   if (!response.ok) throw new Error(`TTS settings failed: ${response.status}`)
   return (await response.json()) as TtsPluginSettings
+}
+
+export async function getTtsPluginInfo(input: { server: ServerConnection.HttpBase; directory?: string }) {
+  const response = await fetch(url(input.server, "/plugin-settings/tts/info", input.directory), {
+    headers: headers(input.server),
+  })
+  if (!response.ok) throw new Error(`TTS info failed: ${response.status}`)
+  return (await response.json()) as TtsPluginInfo
 }
 
 export async function updateTtsPluginSettings(input: {

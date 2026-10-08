@@ -197,6 +197,22 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       }
     },
 
+    async openFilePickerDialog(opts) {
+      const result = await window.api.openFilePicker({
+        multiple: opts?.multiple ?? false,
+        title: opts?.title,
+        defaultPath: opts?.defaultPath,
+        extensions: opts?.extensions,
+      })
+      if (!result) return null
+      try {
+        const paths = result.files.map((file) => file.path)
+        return opts?.multiple ? paths : (paths[0] ?? null)
+      } finally {
+        await window.api.releasePickedFiles(result.token)
+      }
+    },
+
     getPathForFile(file) {
       return attachmentPaths.get(file) ?? window.api.getPathForFile(file)
     },

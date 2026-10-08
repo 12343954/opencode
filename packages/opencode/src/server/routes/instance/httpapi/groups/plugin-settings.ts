@@ -38,6 +38,17 @@ export const TtsPluginSettings = Schema.Struct({
   ),
 }).annotate({ identifier: "TtsPluginSettings" })
 
+export const TtsVoiceInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  language: Schema.optional(Schema.String),
+}).annotate({ identifier: "TtsVoiceInfo" })
+
+export const TtsPluginInfo = Schema.Struct({
+  voices: Schema.Array(TtsVoiceInfo),
+  logPath: Schema.String,
+}).annotate({ identifier: "TtsPluginInfo" })
+
 export const PluginSettingsApi = HttpApi.make("pluginSettings").add(
   HttpApiGroup.make("pluginSettings")
     .add(
@@ -73,6 +84,17 @@ export const PluginSettingsApi = HttpApi.make("pluginSettings").add(
           identifier: "pluginSettings.ttsUpdate",
           summary: "Update TTS plugin settings",
           description: "Update opencode-tts-speak settings.",
+        }),
+      ),
+      HttpApiEndpoint.get("ttsInfo", `${root}/tts/info`, {
+        query: WorkspaceRoutingQuery,
+        success: described(TtsPluginInfo, "TTS plugin metadata"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.ttsInfo",
+          summary: "Get TTS plugin metadata",
+          description: "List system TTS voices and related paths.",
         }),
       ),
       HttpApiEndpoint.post("uninstall", `${root}/uninstall`, {

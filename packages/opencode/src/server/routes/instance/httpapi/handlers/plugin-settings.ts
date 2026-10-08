@@ -4,12 +4,17 @@ import { Global } from "@opencode-ai/core/global"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { applyEdits, modify, parse } from "jsonc-parser"
+import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
 import { InstanceHttpApi } from "../api"
 import { TtsPluginSettings } from "../groups/plugin-settings"
 
 const TTS_CONFIG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.jsonc")
+const TTS_LOG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.log")
+const execFileAsync = promisify(execFile)
+type TtsVoice = { id: string; name: string; language?: string }
 const BUILTIN_PLUGINS = [
   "codex-auth",
   "github-copilot",
@@ -29,8 +34,12 @@ function stripJsonComments(value: string) {
   return value.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
 }
 
+function unknownString(value: unknown) {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : ""
+}
+
 function specText(spec: unknown) {
-  return Array.isArray(spec) ? String(spec[0] ?? "") : String(spec ?? "")
+  return Array.isArray(spec) ? unknownString(spec[0]) : unknownString(spec)
 }
 
 function pluginID(spec: string) {
@@ -58,8 +67,8 @@ async function writeTtsConfig(patch: typeof TtsPluginSettings.Type) {
     ...current,
     ...patch,
     edge_tts: {
-      ...(current.edge_tts ?? {}),
-      ...(patch.edge_tts ?? {}),
+      ...current.edge_tts,
+      ...patch.edge_tts,
     },
   }
   await fs.mkdir(path.dirname(TTS_CONFIG_PATH), { recursive: true })
@@ -81,6 +90,60 @@ async function installedAt(source?: string) {
     return (await fs.stat(source)).mtimeMs
   } catch {
     return undefined
+  }
+}
+
+function parseJsonArray(value: string): Array<Record<string, unknown>> {
+  if (!value.trim()) return []
+  const parsed = JSON.parse(value) as unknown
+  if (Array.isArray(parsed))
+    return parsed.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+  if (parsed && typeof parsed === "object") return [Object.fromEntries(Object.entries(parsed))]
+  return []
+}
+
+async function systemVoices(): Promise<TtsVoice[]> {
+  try {
+    if (process.platform === "win32") {
+      const script = [
+        "Add-Type -AssemblyName System.Speech",
+        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer",
+        "$s.GetInstalledVoices() | ForEach-Object { $i = $_.VoiceInfo; [pscustomobject]@{ id = $i.Name; name = $i.Name; language = $i.Culture.Name } } | ConvertTo-Json -Compress",
+      ].join("; ")
+      const { stdout } = await execFileAsync("powershell.exe", ["-NoLogo", "-NoProfile", "-Command", script], {
+        windowsHide: true,
+      })
+      return parseJsonArray(stdout)
+        .map((voice): TtsVoice => {
+          const language = unknownString(voice.language) || undefined
+          return {
+            id: unknownString(voice.id) || unknownString(voice.name),
+            name: unknownString(voice.name) || unknownString(voice.id),
+            ...(language ? { language } : {}),
+          }
+        })
+        .filter((voice) => voice.id && voice.name)
+    }
+
+    if (process.platform === "darwin") {
+      const { stdout } = await execFileAsync("say", ["-v", "?"], { windowsHide: true })
+      return stdout.split(/\r?\n/).flatMap((line): TtsVoice[] => {
+        const match = line.match(/^(.{1,24}?)\s{2,}([A-Za-z_-]+)\s+#?\s*(.*)$/)
+        if (!match) return []
+        const name = match[1].trim()
+        return [{ id: name, name: match[3]?.trim() ? `${name} - ${match[3].trim()}` : name, language: match[2] }]
+      })
+    }
+
+    const { stdout } = await execFileAsync("espeak", ["--voices"], { windowsHide: true })
+    return stdout
+      .split(/\r?\n/)
+      .slice(1)
+      .map((line) => line.trim().split(/\s+/))
+      .filter((parts) => parts.length >= 4)
+      .map((parts) => ({ id: parts[3], name: parts[3], language: parts[1] }))
+  } catch {
+    return []
   }
 }
 
@@ -148,6 +211,13 @@ export const pluginSettingsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plu
       return yield* Effect.promise(() => writeTtsConfig(ctx.payload))
     })
 
+    const ttsInfo = Effect.fn("PluginSettingsHttpApi.ttsInfo")(function* () {
+      return yield* Effect.promise(async () => ({
+        voices: await systemVoices(),
+        logPath: TTS_LOG_PATH,
+      }))
+    })
+
     const uninstall = Effect.fn("PluginSettingsHttpApi.uninstall")(function* (ctx: { payload: { id: string } }) {
       const cfg = yield* config.get()
       const origins = cfg.plugin_origins ?? (cfg.plugin ?? []).map((spec) => ({ spec }))
@@ -164,6 +234,7 @@ export const pluginSettingsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plu
       .handle("list", list)
       .handle("tts", tts)
       .handle("ttsUpdate", ttsUpdate)
+      .handle("ttsInfo", ttsInfo)
       .handle("uninstall", uninstall)
   }),
 )

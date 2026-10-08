@@ -15,14 +15,17 @@ import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useServerSDK } from "@/context/server-sdk"
 import {
+  getTtsPluginInfo,
   getTtsPluginSettings,
   listPluginSettings,
   uninstallPlugin,
   updateTtsPluginSettings,
   type PluginSettingsInfo,
   type TtsPluginSettings,
+  type TtsVoiceInfo,
 } from "@/utils/plugin-settings"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -53,6 +56,7 @@ const descriptionKeys: Record<string, string> = {
 
 export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefined> }> = (props) => {
   const language = useLanguage()
+  const platform = usePlatform()
   const server = useServerSDK()
   const queryClient = useQueryClient()
   const [saving, setSaving] = createSignal(false)
@@ -63,6 +67,7 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
 
   const pluginsQueryKey = createMemo(() => [server().scope, props.directory(), "plugin-settings"] as const)
   const ttsQueryKey = createMemo(() => [server().scope, props.directory(), "plugin-settings", "tts"] as const)
+  const ttsInfoQueryKey = createMemo(() => [server().scope, props.directory(), "plugin-settings", "tts-info"] as const)
 
   const plugins = createQuery(() => ({
     queryKey: pluginsQueryKey(),
@@ -72,6 +77,11 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
   const tts = createQuery(() => ({
     queryKey: ttsQueryKey(),
     queryFn: () => getTtsPluginSettings({ server: server().server.http, directory: props.directory() }),
+  }))
+
+  const ttsInfo = createQuery(() => ({
+    queryKey: ttsInfoQueryKey(),
+    queryFn: () => getTtsPluginInfo({ server: server().server.http, directory: props.directory() }),
   }))
 
   const description = (plugin: PluginSettingsInfo) =>
@@ -100,8 +110,8 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
       ...current,
       ...patch,
       edge_tts: {
-        ...(current.edge_tts ?? {}),
-        ...(patch.edge_tts ?? {}),
+        ...current.edge_tts,
+        ...patch.edge_tts,
       },
     }
     setSaving(true)
@@ -149,6 +159,41 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
   const date = (value: number | undefined) =>
     value ? new Date(value).toLocaleString() : language.t("settings.plugins.date.unknown")
   const nextSort = () => setSort(sort() === "name" ? "installed" : "name")
+  const currentVoice = createMemo(() => tts.data?.voice ?? tts.data?.edge_tts?.voice)
+  const voiceOptions = createMemo<TtsVoiceInfo[]>(() => {
+    const current = currentVoice()
+    const voices = ttsInfo.data?.voices ?? []
+    if (!current || voices.some((voice) => voice.id === current)) return voices
+    return [{ id: current, name: current }, ...voices]
+  })
+  const selectedVoice = createMemo(() => {
+    const current = currentVoice()
+    return voiceOptions().find((voice) => voice.id === current) ?? voiceOptions()[0]
+  })
+  const percent = (value: string | undefined, fallback: number) => {
+    const parsed = Number(String(value ?? fallback).replace("%", ""))
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+  const formatPercent = (value: number) => `${value > 0 ? "+" : ""}${value}%`
+  const choosePlayer = async () => {
+    const result = await platform.openFilePickerDialog?.({
+      title: language.t("settings.plugins.tts.player.dialog"),
+      extensions: platform.os === "windows" ? ["exe"] : undefined,
+    })
+    const selected = Array.isArray(result) ? result[0] : result
+    if (selected) save({ edge_tts: { player: selected } })
+  }
+  const openLog = () => {
+    const logPath = ttsInfo.data?.logPath
+    if (!logPath) return
+    void platform.openPath?.(logPath).catch((err: unknown) => {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
 
   return (
     <>
@@ -266,7 +311,7 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 title={language.t("settings.plugins.tts.player.title")}
                                 description={language.t("settings.plugins.tts.player.description")}
                               >
-                                <div class="w-full sm:w-[360px]">
+                                <div class="settings-v2-plugin-path-picker">
                                   <TextInputV2
                                     appearance="base"
                                     value={text(tts.data?.edge_tts?.player)}
@@ -277,6 +322,14 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                       save({ edge_tts: { player: event.currentTarget.value.trim() || undefined } })
                                     }
                                   />
+                                  <ButtonV2
+                                    size="normal"
+                                    variant="neutral"
+                                    disabled={saving() || !platform.openFilePickerDialog}
+                                    onClick={() => void choosePlayer()}
+                                  >
+                                    {language.t("settings.plugins.tts.player.choose")}
+                                  </ButtonV2>
                                 </div>
                               </SettingsRowV2>
 
@@ -284,14 +337,20 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 title={language.t("settings.plugins.tts.voice.title")}
                                 description={language.t("settings.plugins.tts.voice.description")}
                               >
-                                <div class="w-full sm:w-[260px]">
-                                  <TextInputV2
+                                <div class="w-full sm:w-[320px]">
+                                  <SelectV2
                                     appearance="base"
-                                    value={text(tts.data?.voice ?? tts.data?.edge_tts?.voice)}
-                                    placeholder="zh-CN-XiaoxiaoNeural"
-                                    disabled={saving()}
-                                    spellcheck={false}
-                                    onChange={(event) => save({ voice: event.currentTarget.value.trim() || undefined })}
+                                    options={voiceOptions()}
+                                    current={selectedVoice()}
+                                    value={(voice) => voice.id}
+                                    label={(voice) =>
+                                      voice.language ? `${voice.name} (${voice.language})` : voice.name
+                                    }
+                                    placeholder={language.t("settings.plugins.tts.voice.empty")}
+                                    disabled={saving() || voiceOptions().length === 0}
+                                    onSelect={(voice) =>
+                                      voice && save({ voice: voice.id, edge_tts: { voice: voice.id } })
+                                    }
                                   />
                                 </div>
                               </SettingsRowV2>
@@ -300,16 +359,21 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 title="Rate"
                                 description={language.t("settings.plugins.tts.rate.description")}
                               >
-                                <div class="w-full sm:w-[120px]">
-                                  <TextInputV2
-                                    appearance="base"
-                                    value={text(tts.data?.edge_tts?.rate, "+0%")}
-                                    placeholder="+0%"
+                                <div class="settings-v2-plugin-slider">
+                                  <input
+                                    type="range"
+                                    min="-50"
+                                    max="100"
+                                    step="5"
+                                    value={percent(tts.data?.edge_tts?.rate, 0)}
                                     disabled={saving()}
                                     onChange={(event) =>
-                                      save({ edge_tts: { rate: event.currentTarget.value.trim() || undefined } })
+                                      save({ edge_tts: { rate: formatPercent(Number(event.currentTarget.value)) } })
                                     }
                                   />
+                                  <span class="settings-v2-plugin-slider-value">
+                                    {formatPercent(percent(tts.data?.edge_tts?.rate, 0))}
+                                  </span>
                                 </div>
                               </SettingsRowV2>
 
@@ -317,16 +381,21 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 title="Volume"
                                 description={language.t("settings.plugins.tts.volume.description")}
                               >
-                                <div class="w-full sm:w-[120px]">
-                                  <TextInputV2
-                                    appearance="base"
-                                    value={text(tts.data?.edge_tts?.volume, "+0%")}
-                                    placeholder="+0%"
+                                <div class="settings-v2-plugin-slider">
+                                  <input
+                                    type="range"
+                                    min="-100"
+                                    max="100"
+                                    step="5"
+                                    value={percent(tts.data?.edge_tts?.volume, 0)}
                                     disabled={saving()}
                                     onChange={(event) =>
-                                      save({ edge_tts: { volume: event.currentTarget.value.trim() || undefined } })
+                                      save({ edge_tts: { volume: formatPercent(Number(event.currentTarget.value)) } })
                                     }
                                   />
+                                  <span class="settings-v2-plugin-slider-value">
+                                    {formatPercent(percent(tts.data?.edge_tts?.volume, 0))}
+                                  </span>
                                 </div>
                               </SettingsRowV2>
 
@@ -334,11 +403,18 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 title={language.t("settings.plugins.tts.debug.title")}
                                 description={language.t("settings.plugins.tts.debug.description")}
                               >
-                                <Switch
-                                  checked={tts.data?.debug === true}
-                                  disabled={saving()}
-                                  onChange={(value) => save({ debug: value })}
-                                />
+                                <div class="settings-v2-plugin-debug-control">
+                                  <Switch
+                                    checked={tts.data?.debug === true}
+                                    disabled={saving()}
+                                    onChange={(value) => save({ debug: value })}
+                                  />
+                                  <Show when={tts.data?.debug === true && ttsInfo.data?.logPath}>
+                                    <ButtonV2 size="normal" variant="ghost-muted" onClick={openLog}>
+                                      {language.t("settings.plugins.tts.log.open")}
+                                    </ButtonV2>
+                                  </Show>
+                                </div>
                               </SettingsRowV2>
                             </div>
                           </Match>
