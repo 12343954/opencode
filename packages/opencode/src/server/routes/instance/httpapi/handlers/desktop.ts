@@ -1,9 +1,11 @@
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { spawn, type ChildProcess } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import WebSocket from "ws"
 import { InstanceHttpApi } from "../api"
 import { DesktopActionInvokePayload } from "../groups/desktop"
 
@@ -19,12 +21,11 @@ type TtsConfig = {
 const OPENCODE_DIR = path.join(os.homedir(), ".config", "opencode")
 const TTS_CONFIG = path.join(OPENCODE_DIR, "plugins", "opencode-tts.jsonc")
 const TTS_LOG = path.join(OPENCODE_DIR, "plugins", "opencode-tts.log")
-const VENV_PYTHON = path.join(
-  OPENCODE_DIR,
-  "tts-venv",
-  process.platform === "win32" ? "Scripts" : "bin",
-  process.platform === "win32" ? "python.exe" : "python",
-)
+const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+const EDGE_TTS_FORMAT = "riff-24khz-16bit-mono-pcm"
+const WINDOWS_SOUND_PLAYER = "__windows_sound_player__"
+const MACOS_SOUND_PLAYER = "__macos_sound_player__"
+const LINUX_SOUND_PLAYER = "__linux_sound_player__"
 let playback: ChildProcess | undefined
 let playbackState: "idle" | "playing" | "paused" = "idle"
 let playbackMessageID: string | undefined
@@ -90,7 +91,7 @@ function togglePlaybackPause() {
     } catch {}
     return true
   }
-  if (playbackState === "paused" && playbackAudioPath && playbackPlayer) {
+  if (playbackState === "paused" && playbackAudioPath) {
     startPlayback(playbackPlayer, playbackAudioPath, playbackOffsetMs)
     return true
   }
@@ -187,10 +188,39 @@ async function speakWithSystemVoice(config: TtsConfig, text: string) {
   ])
 }
 
-function startPlayback(player: string, audioPath: string, offsetMs: number) {
+function startPlayback(player: string | undefined, audioPath: string, offsetMs: number) {
   const seekMs = playbackBoundaryMs.length > 0 ? Math.max(0, offsetMs) : Math.max(0, offsetMs - 300)
   const seek = seekMs > 500 ? ["-ss", (seekMs / 1000).toFixed(2)] : []
-  const child = spawn(player, ["-nodisp", "-autoexit", "-loglevel", "quiet", ...seek, audioPath], { windowsHide: true })
+  let child: ChildProcess
+  if (player === WINDOWS_SOUND_PLAYER) {
+    child = spawn(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "Add-Type -AssemblyName System; $p = New-Object System.Media.SoundPlayer($env:OPENCODE_TTS_AUDIO); $p.PlaySync()",
+      ],
+      { windowsHide: true, env: { ...process.env, OPENCODE_TTS_AUDIO: audioPath } },
+    )
+  } else if (player === MACOS_SOUND_PLAYER) {
+    child = spawn("afplay", [audioPath], { windowsHide: true })
+  } else if (player === LINUX_SOUND_PLAYER) {
+    child = spawn(
+      "sh",
+      [
+        "-c",
+        'if command -v paplay >/dev/null 2>&1; then exec paplay "$1"; fi; if command -v aplay >/dev/null 2>&1; then exec aplay "$1"; fi; if command -v ffplay >/dev/null 2>&1; then exec ffplay -nodisp -autoexit -loglevel quiet "$1"; fi; exit 127',
+        "opencode-tts",
+        audioPath,
+      ],
+      { windowsHide: true },
+    )
+  } else {
+    child = spawn(player ?? "ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", ...seek, audioPath], {
+      windowsHide: true,
+    })
+  }
   playback = child
   playbackState = "playing"
   playbackStartedAt = Date.now()
@@ -202,6 +232,126 @@ function startPlayback(player: string, audioPath: string, offsetMs: number) {
     if (playback !== child) return
     stopPlayback()
   })
+}
+
+function defaultEdgePlayer() {
+  if (process.platform === "win32") return WINDOWS_SOUND_PLAYER
+  if (process.platform === "darwin") return MACOS_SOUND_PLAYER
+  return LINUX_SOUND_PLAYER
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+}
+
+function edgeHeaders(path: string, requestID?: string, contentType?: string) {
+  return [
+    requestID ? `X-RequestId:${requestID}` : undefined,
+    contentType ? `Content-Type:${contentType}` : undefined,
+    `X-Timestamp:${new Date().toISOString()}`,
+    `Path:${path}`,
+    "",
+    "",
+  ]
+    .filter((line) => line !== undefined)
+    .join("\r\n")
+}
+
+function edgeSSML(config: TtsConfig, text: string, voice: string) {
+  const locale = voice.split("-").slice(0, 2).join("-") || "zh-CN"
+  return [
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${escapeXml(locale)}">`,
+    `<voice name="${escapeXml(voice)}">`,
+    `<prosody rate="${escapeXml(config.edge_tts?.rate ?? "+0%")}" volume="${escapeXml(config.edge_tts?.volume ?? "+0%")}">`,
+    escapeXml(text),
+    "</prosody>",
+    "</voice>",
+    "</speak>",
+  ].join("")
+}
+
+function rawDataBuffer(data: WebSocket.RawData) {
+  return Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data)
+}
+
+function edgeAudioChunk(data: WebSocket.RawData) {
+  const buffer = rawDataBuffer(data)
+  const marker = Buffer.from("\r\n\r\n")
+  const index = buffer.indexOf(marker)
+  if (index < 0) return buffer
+  const header = buffer.subarray(0, index).toString("utf8")
+  if (!header.includes("Path:audio")) return Buffer.alloc(0)
+  return buffer.subarray(index + marker.length)
+}
+
+async function synthesizeWithEdgeTts(config: TtsConfig, text: string, out: string) {
+  const requestID = randomUUID().replace(/-/g, "")
+  const connectionID = randomUUID().replace(/-/g, "")
+  const voice = config.edge_tts?.voice ?? config.voice ?? "zh-CN-XiaoxiaoNeural"
+  const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${EDGE_TTS_TOKEN}&ConnectionId=${connectionID}`
+
+  const audio = await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const socket = new WebSocket(url, {
+      headers: {
+        Origin: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+      },
+    })
+    const timer = setTimeout(() => {
+      socket.terminate()
+      reject(new Error("edge_tts timed out"))
+    }, 30_000)
+
+    socket.on("open", () => {
+      socket.send(
+        `${edgeHeaders("speech.config", undefined, "application/json; charset=utf-8")}${JSON.stringify({
+          context: {
+            synthesis: {
+              audio: {
+                metadataoptions: {
+                  sentenceBoundaryEnabled: false,
+                  wordBoundaryEnabled: false,
+                },
+                outputFormat: EDGE_TTS_FORMAT,
+              },
+            },
+          },
+        })}`,
+      )
+      socket.send(`${edgeHeaders("ssml", requestID, "application/ssml+xml")}${edgeSSML(config, text, voice)}`)
+    })
+    socket.on("message", (data, isBinary) => {
+      if (isBinary) {
+        const chunk = edgeAudioChunk(data)
+        if (chunk.length > 0) chunks.push(chunk)
+        return
+      }
+      if (rawDataBuffer(data).toString("utf8").includes("Path:turn.end")) {
+        clearTimeout(timer)
+        socket.close()
+        resolve(Buffer.concat(chunks))
+      }
+    })
+    socket.on("error", (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    socket.on("close", () => {
+      clearTimeout(timer)
+      if (chunks.length === 0) reject(new Error("edge_tts returned no audio"))
+    })
+  })
+
+  if (audio.length === 0) throw new Error("edge_tts returned empty audio")
+  writeFileSync(out, audio)
+  return voice
 }
 
 function speechText(value?: string) {
@@ -230,39 +380,23 @@ async function speak(text: string, messageID?: string) {
   playbackState = "playing"
   playbackMessageID = messageID
   debugLog(config, "speak:start", {
-    backend: config.backend ?? "say",
+    backend: config.backend ?? "edge_tts",
     voice: config.voice ?? config.edge_tts?.voice,
   })
   const id = Date.now()
-  const out = path.join(os.tmpdir(), `opencode-tts-${id}.mp3`)
+  const out = path.join(os.tmpdir(), `opencode-tts-${id}.wav`)
   const subtitles = path.join(os.tmpdir(), `opencode-tts-${id}.vtt`)
   try {
-    if ((config.backend ?? "say") === "say") {
+    if (config.backend === "say") {
       await speakWithSystemVoice(config, clean)
       playbackState = "idle"
       playbackMessageID = undefined
       debugLog(config, "speak:done", { backend: "say" })
       return
     }
-    const voice = config.edge_tts?.voice ?? config.voice ?? "zh-CN-XiaoxiaoNeural"
-    await run(VENV_PYTHON, [
-      "-m",
-      "edge_tts",
-      "--voice",
-      voice,
-      "--rate",
-      config.edge_tts?.rate ?? "+0%",
-      "--volume",
-      config.edge_tts?.volume ?? "+0%",
-      "--text",
-      clean,
-      "--write-media",
-      out,
-      "--write-subtitles",
-      subtitles,
-    ])
+    const voice = await synthesizeWithEdgeTts(config, clean, out)
     playbackAudioPath = out
-    playbackPlayer = config.edge_tts?.player ?? "ffplay"
+    playbackPlayer = config.edge_tts?.player ?? defaultEdgePlayer()
     playbackOffsetMs = 0
     playbackBoundaryMs = readSubtitleBoundaries(subtitles)
     startPlayback(playbackPlayer, playbackAudioPath, playbackOffsetMs)

@@ -95,10 +95,14 @@ const getBase = (appId: string): Configuration => ({
     signtoolOptions: {
       sign: signWindows,
     },
-    target: ["nsis"],
+    target: ["nsis", "portable"],
     verifyUpdateCodeSignature: false,
   },
+  portable: {
+    artifactName: "opencode-desktop-${os}-${arch}-portable.${ext}",
+  },
   nsis: {
+    artifactName: "opencode-desktop-${os}-${arch}-setup.${ext}",
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,

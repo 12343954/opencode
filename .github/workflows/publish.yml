@@ -117,6 +117,15 @@ jobs:
           path: dist-release
           merge-multiple: true
 
+      - name: Package Windows portable
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for file in dist-release/*-portable.exe; do
+            zip -j "${file%.exe}.zip" "$file"
+            rm "$file"
+          done
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:

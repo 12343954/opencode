@@ -13,6 +13,7 @@ import { TtsPluginSettings } from "../groups/plugin-settings"
 
 const TTS_CONFIG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.jsonc")
 const TTS_LOG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.log")
+const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 const execFileAsync = promisify(execFile)
 type TtsVoice = { id: string; name: string; language?: string }
 const BUILTIN_PLUGINS = [
@@ -147,6 +148,43 @@ async function systemVoices(): Promise<TtsVoice[]> {
   }
 }
 
+async function edgeVoices(): Promise<TtsVoice[]> {
+  try {
+    const response = await fetch(
+      `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${EDGE_TTS_TOKEN}`,
+      {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+        },
+      },
+    )
+    if (!response.ok) return []
+    const parsed = (await response.json()) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((voice): TtsVoice => {
+        const id = unknownString(voice.ShortName)
+        const name = unknownString(voice.FriendlyName) || unknownString(voice.LocalName) || id
+        const language = unknownString(voice.Locale) || undefined
+        return { id, name, ...(language ? { language } : {}) }
+      })
+      .filter((voice) => voice.id && voice.name)
+  } catch {
+    return []
+  }
+}
+
+function uniqueVoices(voices: TtsVoice[]) {
+  const seen = new Set<string>()
+  return voices.filter((voice) => {
+    if (seen.has(voice.id)) return false
+    seen.add(voice.id)
+    return true
+  })
+}
+
 async function removePluginFromConfig(source: string, id: string) {
   const text = await fs.readFile(source, "utf8")
   const parsed = parse(text) as { plugin?: unknown[] }
@@ -213,7 +251,7 @@ export const pluginSettingsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plu
 
     const ttsInfo = Effect.fn("PluginSettingsHttpApi.ttsInfo")(function* () {
       return yield* Effect.promise(async () => ({
-        voices: await systemVoices(),
+        voices: uniqueVoices([...(await edgeVoices()), ...(await systemVoices())]),
         logPath: TTS_LOG_PATH,
       }))
     })

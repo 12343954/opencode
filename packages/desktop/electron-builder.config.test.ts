@@ -73,11 +73,13 @@ test("bundles the CLI outside the dev app archive", async () => {
   })
 })
 
-test("packages Windows as an installer only", async () => {
+test("names Windows installer and portable artifacts clearly", async () => {
   const module = await import("./electron-builder.config.ts?windows-installer")
   const config = module.default as Configuration
 
-  expect(config.win?.target).toEqual(["nsis"])
+  expect(config.win?.target).toEqual(["nsis", "portable"])
+  expect(config.nsis?.artifactName).toContain("-setup.")
+  expect(config.portable?.artifactName).toContain("-portable.")
   expect(config.nsis?.oneClick).toBe(false)
   expect(config.nsis?.allowToChangeInstallationDirectory).toBe(true)
 })
