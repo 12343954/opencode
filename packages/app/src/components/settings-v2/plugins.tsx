@@ -15,6 +15,7 @@ import { SegmentedControlItemV2, SegmentedControlV2 } from "@opencode-ai/ui/v2/s
 import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
+import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -231,10 +232,32 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.plugins.title")}</h2>
-          <button type="button" class="settings-v2-plugin-sort" onClick={nextSort}>
-            {language.t(`settings.plugins.sort.${sort()}`)}
-            <span aria-hidden="true">v</span>
-          </button>
+          <TooltipV2 value={language.t("settings.plugins.sort.tooltip")} placement="bottom">
+            <button
+              type="button"
+              class="settings-v2-plugin-sort"
+              aria-label={language.t("settings.plugins.sort.tooltip")}
+              onClick={nextSort}
+            >
+              {language.t(`settings.plugins.sort.${sort()}`)}
+              <svg
+                class="settings-v2-plugin-sort-chevron"
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4.5 6.5L8 10L11.5 6.5"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </TooltipV2>
         </div>
         <SegmentedControlV2
           class="settings-v2-plugin-categories"

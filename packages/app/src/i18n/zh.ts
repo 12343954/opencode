@@ -1060,6 +1060,7 @@ export const dict = {
   "settings.plugins.search.empty": "没有匹配的插件",
   "settings.plugins.sort.name": "插件名称",
   "settings.plugins.sort.installed": "安装日期",
+  "settings.plugins.sort.tooltip": "切换插件排序方式",
   "settings.plugins.category.label": "插件分类",
   "settings.plugins.category.user": "用户插件",
   "settings.plugins.category.system": "系统插件",

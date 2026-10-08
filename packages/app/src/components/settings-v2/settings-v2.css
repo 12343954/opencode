@@ -460,9 +460,12 @@
   line-height: 1;
 }
 
-.settings-v2-plugin-sort span {
+.settings-v2-plugin-sort-chevron {
+  display: block;
+  width: 16px;
+  height: 16px;
   color: var(--v2-icon-icon-muted);
-  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .settings-v2-plugin-sort:focus-visible {

@@ -1082,6 +1082,7 @@ export const dict = {
   "settings.plugins.search.empty": "No plugins match this search",
   "settings.plugins.sort.name": "Plugin name",
   "settings.plugins.sort.installed": "Install date",
+  "settings.plugins.sort.tooltip": "Change plugin sort order",
   "settings.plugins.category.label": "Plugin category",
   "settings.plugins.category.user": "User plugins",
   "settings.plugins.category.system": "System plugins",
