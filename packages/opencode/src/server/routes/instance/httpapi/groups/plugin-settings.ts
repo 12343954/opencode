@@ -97,6 +97,17 @@ export const PluginSettingsApi = HttpApi.make("pluginSettings").add(
           description: "List system TTS voices and related paths.",
         }),
       ),
+      HttpApiEndpoint.post("ttsLog", `${root}/tts/log`, {
+        query: WorkspaceRoutingQuery,
+        success: described(Schema.String, "TTS debug log path"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "pluginSettings.ttsLog",
+          summary: "Prepare TTS debug log",
+          description: "Create the TTS debug log file if needed and return its path.",
+        }),
+      ),
       HttpApiEndpoint.post("uninstall", `${root}/uninstall`, {
         query: WorkspaceRoutingQuery,
         payload: PluginSettingsUninstallInput,

@@ -218,6 +218,14 @@ export const pluginSettingsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plu
       }))
     })
 
+    const ttsLog = Effect.fn("PluginSettingsHttpApi.ttsLog")(function* () {
+      return yield* Effect.promise(async () => {
+        await fs.mkdir(path.dirname(TTS_LOG_PATH), { recursive: true })
+        await fs.appendFile(TTS_LOG_PATH, "", "utf8")
+        return TTS_LOG_PATH
+      })
+    })
+
     const uninstall = Effect.fn("PluginSettingsHttpApi.uninstall")(function* (ctx: { payload: { id: string } }) {
       const cfg = yield* config.get()
       const origins = cfg.plugin_origins ?? (cfg.plugin ?? []).map((spec) => ({ spec }))
@@ -235,6 +243,7 @@ export const pluginSettingsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plu
       .handle("tts", tts)
       .handle("ttsUpdate", ttsUpdate)
       .handle("ttsInfo", ttsInfo)
+      .handle("ttsLog", ttsLog)
       .handle("uninstall", uninstall)
   }),
 )

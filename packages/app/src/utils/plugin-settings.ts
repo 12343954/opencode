@@ -74,6 +74,15 @@ export async function getTtsPluginInfo(input: { server: ServerConnection.HttpBas
   return (await response.json()) as TtsPluginInfo
 }
 
+export async function prepareTtsPluginLog(input: { server: ServerConnection.HttpBase; directory?: string }) {
+  const response = await fetch(url(input.server, "/plugin-settings/tts/log", input.directory), {
+    method: "POST",
+    headers: headers(input.server),
+  })
+  if (!response.ok) throw new Error(`TTS log failed: ${response.status}`)
+  return (await response.json()) as string
+}
+
 export async function updateTtsPluginSettings(input: {
   server: ServerConnection.HttpBase
   directory?: string
