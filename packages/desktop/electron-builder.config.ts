@@ -95,7 +95,7 @@ const getBase = (appId: string): Configuration => ({
     signtoolOptions: {
       sign: signWindows,
     },
-    target: ["nsis", "portable"],
+    target: ["nsis"],
     verifyUpdateCodeSignature: false,
   },
   nsis: {

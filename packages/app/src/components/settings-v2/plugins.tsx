@@ -383,7 +383,7 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                                 <SelectV2
                                   appearance="inline"
                                   options={[...backendOptions]}
-                                  current={tts.data?.backend ?? "edge_tts"}
+                                  current={tts.data?.backend ?? "say"}
                                   label={(option) => option}
                                   onSelect={(value) => value && save({ backend: value })}
                                 />

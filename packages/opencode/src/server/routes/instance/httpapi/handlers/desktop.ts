@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import os from "node:os"
@@ -230,14 +230,14 @@ async function speak(text: string, messageID?: string) {
   playbackState = "playing"
   playbackMessageID = messageID
   debugLog(config, "speak:start", {
-    backend: config.backend ?? "edge_tts",
+    backend: config.backend ?? "say",
     voice: config.voice ?? config.edge_tts?.voice,
   })
   const id = Date.now()
   const out = path.join(os.tmpdir(), `opencode-tts-${id}.mp3`)
   const subtitles = path.join(os.tmpdir(), `opencode-tts-${id}.vtt`)
   try {
-    if (config.backend === "say") {
+    if ((config.backend ?? "say") === "say") {
       await speakWithSystemVoice(config, clean)
       playbackState = "idle"
       playbackMessageID = undefined
@@ -338,8 +338,12 @@ export const desktopHandlers = HttpApiBuilder.group(InstanceHttpApi, "desktop", 
           }
           return { handled: false }
         },
-        catch: (error) => error,
-      }).pipe(Effect.catch(() => Effect.succeed({ handled: false })))
+        catch: (error) => {
+          const config = readTtsConfig()
+          debugLog(config, "action:error", error instanceof Error ? error.message : String(error))
+          return new HttpApiError.BadRequest({})
+        },
+      })
     })
 
     return handlers.handle("actions", actions).handle("ttsState", ttsState).handle("action", action)

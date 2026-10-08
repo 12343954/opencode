@@ -73,6 +73,15 @@ test("bundles the CLI outside the dev app archive", async () => {
   })
 })
 
+test("packages Windows as an installer only", async () => {
+  const module = await import("./electron-builder.config.ts?windows-installer")
+  const config = module.default as Configuration
+
+  expect(config.win?.target).toEqual(["nsis"])
+  expect(config.nsis?.oneClick).toBe(false)
+  expect(config.nsis?.allowToChangeInstallationDirectory).toBe(true)
+})
+
 for (const channel of ["beta", "prod"] as const) {
   test(`does not bundle the CLI in ${channel} builds`, async () => {
     const previous = process.env.OPENCODE_CHANNEL
