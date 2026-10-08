@@ -34,6 +34,7 @@ const channel = (() => {
   if (raw === "dev" || raw === "beta" || raw === "prod") return raw
   return "dev"
 })()
+const unsigned = process.env.OPENCODE_UNSIGNED_DESKTOP === "true"
 
 const APP_IDS = {
   dev: "ai.opencode.desktop.dev",
@@ -75,15 +76,15 @@ const getBase = (appId: string): Configuration => ({
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
-    hardenedRuntime: true,
+    hardenedRuntime: !unsigned,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
-    notarize: true,
+    notarize: !unsigned,
     target: ["dmg", "zip"],
   },
   dmg: {
-    sign: true,
+    sign: !unsigned,
   },
   protocols: {
     name: "OpenCode",
@@ -94,7 +95,7 @@ const getBase = (appId: string): Configuration => ({
     signtoolOptions: {
       sign: signWindows,
     },
-    target: ["nsis"],
+    target: ["nsis", "portable"],
     verifyUpdateCodeSignature: false,
   },
   nsis: {
