@@ -34,6 +34,23 @@ const sortOptions = ["name", "installed"] as const
 
 type SortOption = (typeof sortOptions)[number]
 
+const descriptionKeys: Record<string, string> = {
+  "opencode-tts-speak": "settings.plugins.description.tts",
+  "opencode-tts": "settings.plugins.description.tts",
+  "codex-auth": "settings.plugins.description.codexAuth",
+  "github-copilot": "settings.plugins.description.githubCopilot",
+  modal: "settings.plugins.description.modal",
+  "gitlab-auth": "settings.plugins.description.gitlabAuth",
+  "poe-auth": "settings.plugins.description.poeAuth",
+  "cloudflare-workers": "settings.plugins.description.cloudflareWorkers",
+  "cloudflare-ai-gateway": "settings.plugins.description.cloudflareAiGateway",
+  azure: "settings.plugins.description.azure",
+  digitalocean: "settings.plugins.description.digitalocean",
+  "snowflake-cortex": "settings.plugins.description.snowflakeCortex",
+  xai: "settings.plugins.description.xai",
+  cerebras: "settings.plugins.description.cerebras",
+}
+
 export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefined> }> = (props) => {
   const language = useLanguage()
   const server = useServerSDK()
@@ -57,11 +74,14 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
     queryFn: () => getTtsPluginSettings({ server: server().server.http, directory: props.directory() }),
   }))
 
+  const description = (plugin: PluginSettingsInfo) =>
+    language.t(descriptionKeys[plugin.id] ?? "settings.plugins.description.custom")
+
   const pluginList = createMemo(() => {
     const term = search().trim().toLowerCase()
     const list = [...(plugins.data ?? [])].filter((plugin) => {
       if (!term) return true
-      return [plugin.id, plugin.spec, plugin.source, plugin.scope]
+      return [plugin.id, plugin.spec, plugin.source, plugin.scope, description(plugin)]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))
     })
@@ -128,19 +148,17 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
   const text = (value: string | undefined, fallback = "") => value ?? fallback
   const date = (value: number | undefined) =>
     value ? new Date(value).toLocaleString() : language.t("settings.plugins.date.unknown")
+  const nextSort = () => setSort(sort() === "name" ? "installed" : "name")
 
   return (
     <>
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.plugins.title")}</h2>
-          <SelectV2
-            appearance="inline"
-            options={[...sortOptions]}
-            current={sort()}
-            label={(option) => language.t(`settings.plugins.sort.${option}`)}
-            onSelect={(value) => value && setSort(value as SortOption)}
-          />
+          <button type="button" class="settings-v2-plugin-sort" onClick={nextSort}>
+            {language.t(`settings.plugins.sort.${sort()}`)}
+            <span aria-hidden="true">v</span>
+          </button>
         </div>
         <div class="settings-v2-tab-search">
           <TextInputV2
@@ -176,7 +194,7 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                     >
                       <div class="settings-v2-plugin-copy">
                         <span class="settings-v2-plugin-name">{plugin.id}</span>
-                        <span class="settings-v2-plugin-spec">{plugin.spec}</span>
+                        <span class="settings-v2-plugin-description">{description(plugin)}</span>
                       </div>
                       <div class="settings-v2-plugin-tags">
                         <Show when={plugin.configurable}>
