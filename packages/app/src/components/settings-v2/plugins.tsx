@@ -10,6 +10,7 @@ import {
 } from "solid-js"
 import { createQuery, useQueryClient } from "@tanstack/solid-query"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { SegmentedControlItemV2, SegmentedControlV2 } from "@opencode-ai/ui/v2/segmented-control-v2"
 import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
@@ -34,8 +35,10 @@ import "./settings-v2.css"
 const modeOptions = ["summary", "full"] as const
 const backendOptions = ["edge_tts", "say"] as const
 const sortOptions = ["name", "installed"] as const
+const categoryOptions = ["user", "system"] as const
 
 type SortOption = (typeof sortOptions)[number]
+type CategoryOption = (typeof categoryOptions)[number]
 
 const descriptionKeys: Record<string, string> = {
   "opencode-tts-speak": "settings.plugins.description.tts",
@@ -64,6 +67,7 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
   const [expanded, setExpanded] = createSignal<string>()
   const [search, setSearch] = createSignal("")
   const [sort, setSort] = createSignal<SortOption>("name")
+  const [category, setCategory] = createSignal<CategoryOption>("user")
 
   const pluginsQueryKey = createMemo(() => [server().scope, props.directory(), "plugin-settings"] as const)
   const ttsQueryKey = createMemo(() => [server().scope, props.directory(), "plugin-settings", "tts"] as const)
@@ -86,10 +90,13 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
 
   const description = (plugin: PluginSettingsInfo) =>
     language.t(descriptionKeys[plugin.id] ?? "settings.plugins.description.custom")
+  const pluginCategory = (plugin: PluginSettingsInfo): CategoryOption =>
+    plugin.spec.startsWith("builtin:") || plugin.source === "opencode" ? "system" : "user"
 
   const pluginList = createMemo(() => {
     const term = search().trim().toLowerCase()
     const list = [...(plugins.data ?? [])].filter((plugin) => {
+      if (pluginCategory(plugin) !== category()) return false
       if (!term) return true
       return [plugin.id, plugin.spec, plugin.source, plugin.scope, description(plugin)]
         .filter(Boolean)
@@ -159,6 +166,11 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
   const date = (value: number | undefined) =>
     value ? new Date(value).toLocaleString() : language.t("settings.plugins.date.unknown")
   const nextSort = () => setSort(sort() === "name" ? "installed" : "name")
+  const selectCategory = (next: string | null) => {
+    if (next !== "user" && next !== "system") return
+    setCategory(next)
+    setExpanded(undefined)
+  }
   const currentVoice = createMemo(() => tts.data?.voice ?? tts.data?.edge_tts?.voice)
   const voiceOptions = createMemo<TtsVoiceInfo[]>(() => {
     const current = currentVoice()
@@ -205,6 +217,17 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
             <span aria-hidden="true">v</span>
           </button>
         </div>
+        <SegmentedControlV2
+          class="settings-v2-plugin-categories"
+          value={category()}
+          onChange={selectCategory}
+          aria-label={language.t("settings.plugins.category.label")}
+        >
+          <SegmentedControlItemV2 value="user">{language.t("settings.plugins.category.user")}</SegmentedControlItemV2>
+          <SegmentedControlItemV2 value="system">
+            {language.t("settings.plugins.category.system")}
+          </SegmentedControlItemV2>
+        </SegmentedControlV2>
         <div class="settings-v2-tab-search">
           <TextInputV2
             appearance="base"
@@ -222,7 +245,9 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
             when={pluginList().length > 0}
             fallback={
               <div class="settings-v2-plugin-empty">
-                {search().trim() ? language.t("settings.plugins.search.empty") : language.t("settings.plugins.empty")}
+                {search().trim()
+                  ? language.t("settings.plugins.search.empty")
+                  : language.t(`settings.plugins.empty.${category()}`)}
               </div>
             }
           >
