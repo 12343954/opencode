@@ -317,7 +317,22 @@ export const SettingsPluginsV2: Component<{ directory: Accessor<string | undefin
                             ? language.t("settings.plugins.scope.local")
                             : language.t("settings.plugins.scope.global")}
                         </span>
-                        <span class="settings-v2-plugin-chevron">v</span>
+                        <svg
+                          class="settings-v2-plugin-chevron"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M4.5 6.5L8 10L11.5 6.5"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
                       </div>
                     </button>
 
