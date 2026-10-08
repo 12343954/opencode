@@ -54,6 +54,19 @@ This fork focuses on desktop usability improvements:
 - **Windows installer improvements** - the installer supports choosing a custom installation directory instead of forcing the default system drive path.
 - **Fork release workflow** - GitHub Actions can build desktop artifacts from this fork when pushing desktop release tags.
 
+### TTS Plugin Setup
+
+This fork expects the TTS plugin to be installed from npm. Add `opencode-tts-speak` to your OpenCode config:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-tts-speak"]
+}
+```
+
+OpenCode installs npm plugins automatically at startup. Restart the desktop app, then open **Settings -> Plugins -> User plugins -> opencode-tts-speak** to configure the TTS backend, player path, voice, rate, volume, and debug logs.
+
 ### Installation
 
 ```bash
