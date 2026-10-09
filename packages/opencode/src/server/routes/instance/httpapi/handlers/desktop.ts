@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { spawn, type ChildProcess } from "node:child_process"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -22,7 +22,9 @@ const OPENCODE_DIR = path.join(os.homedir(), ".config", "opencode")
 const TTS_CONFIG = path.join(OPENCODE_DIR, "plugins", "opencode-tts.jsonc")
 const TTS_LOG = path.join(OPENCODE_DIR, "plugins", "opencode-tts.log")
 const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-const EDGE_TTS_FORMAT = "riff-24khz-16bit-mono-pcm"
+const EDGE_TTS_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
+const EDGE_TTS_SEC_MS_GEC_VERSION = "1-142.0.3595.94"
+const WIN_EPOCH_SECONDS = 11_644_473_600
 const WINDOWS_SOUND_PLAYER = "__windows_sound_player__"
 const MACOS_SOUND_PLAYER = "__macos_sound_player__"
 const LINUX_SOUND_PLAYER = "__linux_sound_player__"
@@ -199,7 +201,17 @@ function startPlayback(player: string | undefined, audioPath: string, offsetMs: 
         "-NoLogo",
         "-NoProfile",
         "-Command",
-        "Add-Type -AssemblyName System; $p = New-Object System.Media.SoundPlayer($env:OPENCODE_TTS_AUDIO); $p.PlaySync()",
+        [
+          "Add-Type -AssemblyName PresentationCore",
+          "$p = New-Object System.Windows.Media.MediaPlayer",
+          "$done = $false",
+          "Register-ObjectEvent -InputObject $p -EventName MediaEnded -Action { $script:done = $true } | Out-Null",
+          "Register-ObjectEvent -InputObject $p -EventName MediaFailed -Action { $script:done = $true } | Out-Null",
+          "$p.Open([Uri]$env:OPENCODE_TTS_AUDIO)",
+          "$p.Play()",
+          "while (-not $done) { Start-Sleep -Milliseconds 100 }",
+          "$p.Close()",
+        ].join("; "),
       ],
       { windowsHide: true, env: { ...process.env, OPENCODE_TTS_AUDIO: audioPath } },
     )
@@ -210,7 +222,7 @@ function startPlayback(player: string | undefined, audioPath: string, offsetMs: 
       "sh",
       [
         "-c",
-        'if command -v paplay >/dev/null 2>&1; then exec paplay "$1"; fi; if command -v aplay >/dev/null 2>&1; then exec aplay "$1"; fi; if command -v ffplay >/dev/null 2>&1; then exec ffplay -nodisp -autoexit -loglevel quiet "$1"; fi; exit 127',
+        'if command -v ffplay >/dev/null 2>&1; then exec ffplay -nodisp -autoexit -loglevel quiet "$1"; fi; if command -v mpg123 >/dev/null 2>&1; then exec mpg123 -q "$1"; fi; if command -v mpv >/dev/null 2>&1; then exec mpv --no-video --really-quiet "$1"; fi; if command -v cvlc >/dev/null 2>&1; then exec cvlc --play-and-exit --quiet "$1"; fi; exit 127',
         "opencode-tts",
         audioPath,
       ],
@@ -262,6 +274,16 @@ function edgeHeaders(path: string, requestID?: string, contentType?: string) {
     .join("\r\n")
 }
 
+function edgeSecMsGec() {
+  let seconds = Math.floor(Date.now() / 1000) + WIN_EPOCH_SECONDS
+  seconds -= seconds % 300
+  const filetime = BigInt(seconds) * 10_000_000n
+  return createHash("sha256")
+    .update(`${filetime}${EDGE_TTS_TOKEN}`, "ascii")
+    .digest("hex")
+    .toUpperCase()
+}
+
 function edgeSSML(config: TtsConfig, text: string, voice: string) {
   const locale = voice.split("-").slice(0, 2).join("-") || "zh-CN"
   return [
@@ -281,19 +303,24 @@ function rawDataBuffer(data: WebSocket.RawData) {
 
 function edgeAudioChunk(data: WebSocket.RawData) {
   const buffer = rawDataBuffer(data)
-  const marker = Buffer.from("\r\n\r\n")
-  const index = buffer.indexOf(marker)
-  if (index < 0) return buffer
-  const header = buffer.subarray(0, index).toString("utf8")
+  if (buffer.length < 2) return Buffer.alloc(0)
+  const headerLength = buffer.readUInt16BE(0)
+  const audioOffset = 2 + headerLength
+  if (buffer.length < audioOffset) return Buffer.alloc(0)
+  const header = buffer.subarray(2, audioOffset).toString("utf8")
   if (!header.includes("Path:audio")) return Buffer.alloc(0)
-  return buffer.subarray(index + marker.length)
+  return buffer.subarray(audioOffset)
 }
 
 async function synthesizeWithEdgeTts(config: TtsConfig, text: string, out: string) {
   const requestID = randomUUID().replace(/-/g, "")
   const connectionID = randomUUID().replace(/-/g, "")
   const voice = config.edge_tts?.voice ?? config.voice ?? "zh-CN-XiaoxiaoNeural"
-  const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${EDGE_TTS_TOKEN}&ConnectionId=${connectionID}`
+  const url =
+    `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${EDGE_TTS_TOKEN}` +
+    `&Sec-MS-GEC=${edgeSecMsGec()}` +
+    `&Sec-MS-GEC-Version=${EDGE_TTS_SEC_MS_GEC_VERSION}` +
+    `&ConnectionId=${connectionID}`
 
   const audio = await new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -301,7 +328,9 @@ async function synthesizeWithEdgeTts(config: TtsConfig, text: string, out: strin
       headers: {
         Origin: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
       },
     })
     const timer = setTimeout(() => {
@@ -384,7 +413,7 @@ async function speak(text: string, messageID?: string) {
     voice: config.voice ?? config.edge_tts?.voice,
   })
   const id = Date.now()
-  const out = path.join(os.tmpdir(), `opencode-tts-${id}.wav`)
+  const out = path.join(os.tmpdir(), `opencode-tts-${id}.mp3`)
   const subtitles = path.join(os.tmpdir(), `opencode-tts-${id}.vtt`)
   try {
     if (config.backend === "say") {

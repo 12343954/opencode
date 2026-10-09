@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -14,6 +15,8 @@ import { TtsPluginSettings } from "../groups/plugin-settings"
 const TTS_CONFIG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.jsonc")
 const TTS_LOG_PATH = path.join(Global.Path.config, "plugins", "opencode-tts.log")
 const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+const EDGE_TTS_SEC_MS_GEC_VERSION = "1-142.0.3595.94"
+const WIN_EPOCH_SECONDS = 11_644_473_600
 const execFileAsync = promisify(execFile)
 type TtsVoice = { id: string; name: string; language?: string }
 const BUILTIN_PLUGINS = [
@@ -150,12 +153,21 @@ async function systemVoices(): Promise<TtsVoice[]> {
 
 async function edgeVoices(): Promise<TtsVoice[]> {
   try {
+    let seconds = Math.floor(Date.now() / 1000) + WIN_EPOCH_SECONDS
+    seconds -= seconds % 300
+    const filetime = BigInt(seconds) * 10_000_000n
+    const secMsGec = createHash("sha256")
+      .update(`${filetime}${EDGE_TTS_TOKEN}`, "ascii")
+      .digest("hex")
+      .toUpperCase()
     const response = await fetch(
-      `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${EDGE_TTS_TOKEN}`,
+      `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${EDGE_TTS_TOKEN}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=${EDGE_TTS_SEC_MS_GEC_VERSION}`,
       {
         headers: {
           "user-agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
+          "accept-language": "en-US,en;q=0.9",
+          "accept-encoding": "gzip, deflate, br",
         },
       },
     )
